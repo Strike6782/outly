@@ -1,0 +1,479 @@
+@import "tailwindcss";
+
+@theme {
+  /* Custom breakpoints */
+  --breakpoint-sm: 380px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  /* Primary color palette */
+  --color-primary: #00A63E;
+  --color-primary-hover: #009437;
+  --color-primary-active: #007A2E;
+  --color-primary-light: #E5F6EC;
+  --color-primary-disabled: #A3D9B5;
+
+  /* Font families */
+  --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+/* ─── Landing page animations ─── */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* ─── Loader animations ─── */
+
+@keyframes breathe {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.08);
+    opacity: 0.85;
+  }
+}
+
+@keyframes progressBar {
+  0% {
+    width: 0%;
+  }
+
+  20% {
+    width: 30%;
+  }
+
+  50% {
+    width: 60%;
+  }
+
+  80% {
+    width: 85%;
+  }
+
+  100% {
+    width: 100%;
+  }
+}
+
+/* ─── Scroll-triggered visibility classes ─── */
+
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.fade-in-up.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Staggered children animation delays */
+.fade-in-up.visible:nth-child(2) {
+  transition-delay: 0.1s;
+}
+
+.fade-in-up.visible:nth-child(3) {
+  transition-delay: 0.2s;
+}
+
+.fade-in-up.visible:nth-child(4) {
+  transition-delay: 0.3s;
+}
+
+/* ─── Global resets and base styles ─── */
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Touch device momentum scrolling */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* Prevent horizontal overflow on mobile */
+@media (max-width: 1024px) {
+  html {
+    overflow-x: hidden;
+  }
+}
+
+/* Interactive element transition base */
+button,
+a,
+input,
+select,
+textarea {
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+/* ─── TipTap Editor Styles ─── */
+
+.tiptap {
+  outline: none;
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+.tiptap h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.tiptap h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.6rem 0 0.4rem;
+}
+
+.tiptap h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.5rem 0 0.3rem;
+}
+
+.tiptap ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid #60a5fa;
+  padding-left: 1rem;
+  color: #4b5563;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+.tiptap hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 1rem 0;
+}
+
+.tiptap code {
+  background-color: #f3f4f6;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  font-size: 0.85em;
+  color: #db2777;
+}
+
+.tiptap pre {
+  background-color: #1f2937;
+  color: #e5e7eb;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.85em;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.tiptap pre code {
+  background: none;
+  color: inherit;
+  padding: 0;
+}
+
+.tiptap a {
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.tiptap a:hover {
+  color: #1d4ed8;
+}
+
+.tiptap mark {
+  background-color: #fef08a;
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.15rem;
+}
+
+/* Hide scrollbar for toolbar horizontal scroll on mobile */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Toast notification animations ─── */
+
+@keyframes toastEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-12px);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.02) translateY(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes toastBorderWipe {
+  0% {
+    transform: scaleY(0);
+    transform-origin: top;
+  }
+
+  100% {
+    transform: scaleY(1);
+    transform-origin: top;
+  }
+}
+
+@keyframes toastExit {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0px);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateX(30px) scale(0.95);
+    filter: blur(4px);
+  }
+}
+
+@keyframes toastExitBlur {
+  0% {
+    filter: blur(0px);
+  }
+
+  100% {
+    filter: blur(4px);
+  }
+}
+
+@keyframes toastReflow {
+  0% {
+    transform: translateY(-12px);
+  }
+
+  60% {
+    transform: translateY(2px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes toastNudge {
+  0% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(2px);
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes toastIconPop {
+  0% {
+    transform: rotate(-15deg) scale(0);
+  }
+
+  70% {
+    transform: rotate(0deg) scale(1.2);
+  }
+
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes toastProgress {
+  0% {
+    width: 100%;
+  }
+
+  100% {
+    width: 0%;
+  }
+}
+
+@keyframes toastFadeIn {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes toastFadeOut {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Register toast animations in Tailwind theme */
+@theme {
+  --animate-toast-enter: toastEnter 450ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  --animate-toast-border-wipe: toastBorderWipe 400ms ease-out forwards;
+  --animate-toast-exit: toastExit 250ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  --animate-toast-exit-blur: toastExitBlur 150ms ease-in forwards;
+  --animate-toast-reflow: toastReflow 300ms cubic-bezier(0.25, 1.5, 0.5, 1) forwards;
+  --animate-toast-nudge: toastNudge 200ms ease-out;
+  --animate-toast-icon-pop: toastIconPop 200ms cubic-bezier(0.34, 1.56, 0.64, 1) 200ms both;
+  --animate-toast-progress: toastProgress linear forwards;
+  --animate-toast-fade-in: toastFadeIn 150ms ease forwards;
+  --animate-toast-fade-out: toastFadeOut 150ms ease forwards;
+}
+
+/* Reduced motion: replace all complex toast animations with simple fades */
+@media (prefers-reduced-motion: reduce) {
+  .animate-toast-enter {
+    animation: toastFadeIn 150ms ease forwards !important;
+  }
+
+  .animate-toast-border-wipe {
+    animation: none !important;
+  }
+
+  .animate-toast-exit {
+    animation: toastFadeOut 150ms ease forwards !important;
+  }
+
+  .animate-toast-exit-blur {
+    animation: none !important;
+  }
+
+  .animate-toast-reflow {
+    animation: none !important;
+  }
+
+  .animate-toast-nudge {
+    animation: none !important;
+  }
+
+  .animate-toast-icon-pop {
+    animation: toastFadeIn 150ms ease forwards !important;
+  }
+
+  .animate-toast-progress {
+    animation: toastProgress linear forwards !important;
+  }
+}
+
+/* Toast hover lift effect */
+.toast-hover-lift {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.toast-hover-lift:hover {
+  transform: scale(1.01) translateY(-1px);
+  box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 10px -5px rgba(0, 0, 0, 0.05);
+}
+
+/* Progress bar glow effects */
+.toast-progress-glow-success {
+  box-shadow: 4px 0 8px rgba(34, 197, 94, 0.4);
+}
+
+.toast-progress-glow-error {
+  box-shadow: 4px 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.toast-progress-glow-warning {
+  box-shadow: 4px 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.toast-progress-glow-info {
+  box-shadow: 4px 0 8px rgba(59, 130, 246, 0.4);
+}

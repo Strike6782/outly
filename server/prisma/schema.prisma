@@ -1,0 +1,351 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  googleId  String   @unique
+  email     String   @unique
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  senders       Sender[]
+  campaigns     EmailCampaign[]
+  refreshTokens RefreshToken[]
+  templates     EmailTemplate[]
+}
+
+model Sender {
+  id     String  @id @default(cuid())
+  userId String
+  email  String
+  name   String?
+
+  // Encrypted App Password (AES-256-CBC format: "iv_hex:ciphertext_hex").
+  // Default empty string allows existing rows to migrate without breaking — 
+  // senders created via OAuth login won't have SMTP credentials yet.
+  appPassword String @default("")
+
+  // SMTP server configuration — defaults to Gmail's SMTP settings since
+  // the primary use case is Google App Passwords.
+  smtpHost String @default("smtp.gmail.com")
+  smtpPort Int    @default(465)
+
+  // Whether SMTP credentials have been verified via a transporter.verify() call.
+  // Existing OAuth-created senders default to false until the user configures SMTP.
+  isVerified Boolean @default(false)
+
+  // Maximum emails this sender can send per day — protects against provider
+  // rate limits and account suspension.
+  dailyLimit Int @default(500)
+
+  // Per-sender hourly limit — overrides campaign-level hourlyLimit when set.
+  // Null means fall back to the campaign's hourlyLimit value.
+  hourlyLimit Int?
+
+  createdAt DateTime @default(now())
+
+  // Auto-updated timestamp for tracking when SMTP credentials were last changed.
+  updatedAt DateTime @updatedAt
+
+  user              User             @relation(fields: [userId], references: [id])
+  campaigns         EmailCampaign[]
+  campaignSenders   CampaignSender[]
+  emailJobs         EmailJob[]
+  providerProfile   ProviderProfile? @relation(fields: [providerProfileId], references: [id])
+  providerProfileId String?
+  warmupSchedule    WarmupSchedule?
+  cooldown          SenderCooldown?
+
+  // Prevent duplicate sender emails per user — a user can't register the same
+  // email address twice.
+  @@unique([userId, email])
+  // Index on userId for efficient user-scoped queries (e.g., "list all senders
+  // for this user"). Without this, every getSenders call would do a full table scan.
+  @@index([userId])
+}
+
+model EmailCampaign {
+  id       String  @id @default(cuid())
+  userId   String
+  senderId String?
+
+  subject String
+  body    String
+
+  startTime    DateTime
+  delaySeconds Int
+  hourlyLimit  Int
+
+  totalRecipients Int
+  status          CampaignStatus @default(SCHEDULED)
+  pauseReason     String?
+  trackOpens      Boolean        @default(true)
+  trackClicks     Boolean        @default(true)
+
+  createdAt DateTime @default(now())
+
+  user                    User                     @relation(fields: [userId], references: [id])
+  sender                  Sender?                  @relation(fields: [senderId], references: [id])
+  emails                  EmailJob[]
+  attachments             Attachment[]
+  sequenceSteps           SequenceStep[]
+  recipientSequenceStates RecipientSequenceState[]
+  campaignSenders         CampaignSender[]
+
+  // Index on userId for efficient user-scoped campaign listing — the dashboard
+  // queries campaigns by authenticated user on every page load.
+  @@index([userId])
+  // Index on senderId for efficient sender-scoped queries (e.g., "find all
+  // campaigns using this sender" for deletion checks or sender stats).
+  @@index([senderId])
+}
+
+model EmailJob {
+  id         String  @id @default(cuid())
+  campaignId String
+  senderId   String?
+
+  toEmail        String
+  scheduledAt    DateTime
+  sentAt         DateTime?
+  status         EmailStatus @default(PENDING)
+  error          String?
+  isStarred      Boolean?    @default(false)
+  columnData     Json?
+  isReplied      Boolean     @default(false)
+  sequenceStepId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign     EmailCampaign @relation(fields: [campaignId], references: [id])
+  sequenceStep SequenceStep? @relation(fields: [sequenceStepId], references: [id])
+  sender       Sender?       @relation(fields: [senderId], references: [id])
+  trackingEvents TrackingEvent[]
+
+  // Index on campaignId for efficient campaign-scoped queries — the worker checks
+  // campaign completion by counting non-terminal jobs for a given campaign.
+  @@index([campaignId])
+  // Index on scheduledAt for the worker to efficiently find jobs ready to process.
+  @@index([scheduledAt])
+  // Index on status for the startup recovery sweep (find all SENDING jobs)
+  // and for campaign completion checks (count non-terminal jobs).
+  @@index([status])
+  // Index on senderId for per-sender queries
+  @@index([senderId])
+}
+
+model CampaignSender {
+  id            String @id @default(cuid())
+  campaignId    String
+  senderId      String
+  rotationOrder Int
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sender   Sender        @relation(fields: [senderId], references: [id])
+
+  @@unique([campaignId, senderId])
+  @@index([campaignId])
+}
+
+// Tracks how many emails a sender has sent within each time window.
+// Used by the email worker to enforce per-sender hourly and per-minute
+// rate limits and prevent provider account suspension.
+model RateLimitCounter {
+  id           String    @id @default(cuid())
+  senderId     String
+  hourWindow   DateTime
+  count        Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  // Nullable minute window for per-minute tracking. Null for legacy hourly-only
+  // counters; set to the start of the 60-second window for per-minute counters.
+  minuteWindow DateTime?
+
+  // Unique constraint ensures one counter per sender per hour window —
+  // the worker upserts on this pair to atomically increment the count.
+  @@unique([senderId, hourWindow])
+  // Unique constraint for per-minute lookups — one counter per sender per minute window.
+  @@unique([senderId, minuteWindow])
+  // Index on senderId + hourWindow for efficient hourly aggregate queries.
+  @@index([senderId, hourWindow])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  // Index on userId for efficient token lookup during refresh/revocation.
+  @@index([userId])
+}
+
+// Stores metadata for files uploaded to Cloudinary and attached to campaigns.
+// The actual file bytes live in Cloudinary — this model stores the URL reference.
+// WHY cascade delete: When a campaign is deleted, its attachment records should
+// be cleaned up automatically to prevent orphaned metadata.
+model Attachment {
+  id         String @id @default(cuid())
+  campaignId String
+  url        String // Cloudinary secure_url where the file is stored
+  filename   String // Original filename preserved for the email attachment
+  size       Int // File size in bytes — used for 25 MB total limit validation
+  mimeType   String // MIME type string (e.g., "application/pdf")
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // Index on campaignId for efficient lookup when the worker fetches attachments
+  @@index([campaignId])
+}
+
+model EmailTemplate {
+  id      String @id @default(cuid())
+  userId  String
+  name    String
+  subject String
+  body    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  // Enforce unique template names per user
+  @@unique([userId, name])
+  // Index for efficient user-scoped queries
+  @@index([userId])
+}
+
+model SequenceStep {
+  id         String @id @default(cuid())
+  campaignId String
+  stepNumber Int
+  subject    String
+  body       String
+  waitDays   Int // 0 for step 0 (initial), >= 1 for follow-ups
+
+  campaign  EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  emailJobs EmailJob[]
+
+  @@unique([campaignId, stepNumber])
+  @@index([campaignId])
+}
+
+model RecipientSequenceState {
+  id             String  @id @default(cuid())
+  campaignId     String
+  recipientEmail String
+  currentStep    Int     @default(0)
+  paused         Boolean @default(false)
+  replied        Boolean @default(false)
+  completed      Boolean @default(false)
+  stepStatuses   Json // Array of { stepNumber, status, sentAt, error, emailJobId }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  campaign EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, recipientEmail])
+  @@index([campaignId])
+  @@index([campaignId, paused, replied, completed])
+}
+
+enum CampaignStatus {
+  SCHEDULED
+  SENDING
+  PAUSED
+  CANCELLED
+  COMPLETED
+}
+
+enum EmailStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// ─── Throttling Refinement Models ────────────────────────────────────────────
+
+// Defines provider-specific rate limits for known email providers (Gmail, Outlook, etc.)
+// and a "Default" fallback for custom SMTP hosts. The Throttle Engine uses these limits
+// as the provider ceiling when computing effective send rates.
+model ProviderProfile {
+  id              String @id @default(cuid())
+  providerName    String @unique // "Gmail", "Outlook", "Default"
+  smtpHostPattern String @unique // "smtp.gmail.com", "smtp.office365.com", "*"
+  perMinuteLimit  Int // e.g., 10
+  perHourLimit    Int // e.g., 100
+  perDayLimit     Int // e.g., 500
+
+  senders Sender[]
+}
+
+// Progressive sending plan that gradually increases a new sender's daily volume
+// over a defined ramp-up period. Created automatically when a sender is verified.
+// The dailyLimits JSON array holds per-day caps (e.g., [20, 30, 50, ...]).
+model WarmupSchedule {
+  id           String   @id @default(cuid())
+  senderId     String   @unique
+  startDate    DateTime @default(now())
+  durationDays Int      @default(14)
+  dailyLimits  Json // Array of ints: [20, 30, 50, 75, 100, ...]
+  isActive     Boolean  @default(true)
+  optedOut     Boolean  @default(false)
+
+  sender Sender @relation(fields: [senderId], references: [id])
+}
+
+// Tracks consecutive SMTP errors for a sender and manages cooldown state.
+// After 3 consecutive errors the sender enters a cooldown period during which
+// no sends are attempted. Resets on a successful send.
+model SenderCooldown {
+  id                String    @id @default(cuid())
+  senderId          String    @unique
+  consecutiveErrors Int       @default(0)
+  cooldownUntil     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sender Sender @relation(fields: [senderId], references: [id])
+}
+
+// ─── Email Tracking Models ───────────────────────────────────────────────────
+
+// Records individual open and click events for sent emails.
+// Each event is stored separately to capture repeat opens/clicks.
+// Unique open/click counts are derived via COUNT(DISTINCT emailJobId).
+model TrackingEvent {
+  id          String            @id @default(cuid())
+  emailJobId  String
+  eventType   TrackingEventType
+  url         String?           // Original destination URL (CLICK events only)
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime          @default(now())
+
+  emailJob EmailJob @relation(fields: [emailJobId], references: [id])
+
+  @@index([emailJobId])
+  @@index([eventType])
+  @@index([emailJobId, eventType])
+}
+
+enum TrackingEventType {
+  OPEN
+  CLICK
+}

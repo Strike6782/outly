@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00A63E"/>
+      <stop offset="60%" stop-color="#00B847"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+    <clipPath id="clip">
+      <rect width="32" height="32" rx="7"/>
+    </clipPath>
+  </defs>
+
+  <!-- Background -->
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+
+  <!-- Subtle inner shadow for depth -->
+  <g clip-path="url(#clip)">
+    <rect y="0" width="32" height="15" fill="white" opacity="0.1"/>
+  </g>
+
+  <!-- Paper plane — clean, centered, slightly tilted -->
+  <g transform="translate(16,16)">
+    <!-- Main body -->
+    <path d="M-9,-8 L10,0 L-9,8 L-5.5,0 Z" fill="white" fill-opacity="0.95"/>
+    <!-- Fold line for depth -->
+    <path d="M-5.5,0 L10,0" stroke="#00A63E" stroke-opacity="0.35" stroke-width="0.8"/>
+    <!-- Bottom wing shadow -->
+    <path d="M-9,8 L-5.5,0 L10,0 Z" fill="black" fill-opacity="0.06"/>
+  </g>
+</svg>
