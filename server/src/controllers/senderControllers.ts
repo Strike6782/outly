@@ -1,12 +1,16 @@
 import { Request, Response } from "express";
-import nodemailer from "nodemailer";
 import { prisma } from "../config/prisma";
+import {
+  EmailProviderPreset,
+  resolveProviderConfig,
+} from "../config/fastmail";
 import { encrypt } from "../utils/encryption";
 import { detectProvider } from "../utils/providerProfile";
 import { DEFAULT_WARMUP_DAILY_LIMITS, isInWarmup } from "../utils/warmupEvaluator";
 import { getEffectiveLimits } from "../utils/throttleEngine";
 import { getAdaptiveState } from "../utils/adaptiveThrottle";
 import { getSentCountToday } from "../utils/dailyLimitTracker";
+import { createSmtpTransporter } from "../utils/smtpTransport";
 
 // ---------------------------------------------------------------------------
 // WHY SMTP verify before save: Verifying credentials upfront prevents storing
@@ -25,6 +29,17 @@ import { getSentCountToday } from "../utils/dailyLimitTracker";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function parseProvider(value: unknown): EmailProviderPreset {
+  return value === "fastmail" ? "fastmail" : "gmail";
+}
+
+function warmupLimitsForProvider(provider: EmailProviderPreset): number[] {
+  const config = resolveProviderConfig(provider);
+  return config.warmupDailyLimits.length > 0
+    ? config.warmupDailyLimits
+    : DEFAULT_WARMUP_DAILY_LIMITS;
+}
+
 export const createSender = async (
   req: Request,
   res: Response,
@@ -36,7 +51,13 @@ export const createSender = async (
       return;
     }
 
-    const { name, email, appPassword } = req.body;
+    const { name, email, appPassword, mailLoginEmail, provider: providerRaw } = req.body;
+    const provider = parseProvider(providerRaw);
+    const providerConfig = resolveProviderConfig(provider);
+    const smtpLogin =
+      typeof mailLoginEmail === "string" && mailLoginEmail.trim() !== ""
+        ? mailLoginEmail.trim()
+        : email.trim();
 
     // Validate all required fields are present and non-empty
     const missingFields: string[] = [];
@@ -57,17 +78,13 @@ export const createSender = async (
       return;
     }
 
-    // Create SMTP transporter and verify credentials before saving
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465, // Use 465 for secure TLS (required for Gmail App Passwords to avoid blocks)
-      secure: true,
-      auth: {
-        user: email,
-        pass: appPassword,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
+    // Verify SMTP credentials before persisting the sender record
+    const transporter = createSmtpTransporter({
+      smtpHost: providerConfig.smtpHost,
+      smtpPort: providerConfig.smtpPort,
+      email,
+      password: appPassword,
+      loginEmail: smtpLogin,
     });
 
     try {
@@ -86,9 +103,13 @@ export const createSender = async (
       data: {
         name,
         email,
+        mailLoginEmail: smtpLogin !== email.trim() ? smtpLogin : null,
         appPassword: encryptedPassword,
-        smtpHost: "smtp.gmail.com",
-        smtpPort: 465,
+        smtpHost: providerConfig.smtpHost,
+        smtpPort: providerConfig.smtpPort,
+        imapHost: providerConfig.imapHost,
+        imapPort: providerConfig.imapPort,
+        dailyLimit: providerConfig.dailyLimit,
         isVerified: true,
         userId: req.user.id,
       },
@@ -106,15 +127,13 @@ export const createSender = async (
     }
 
     // Create WarmupSchedule for newly verified sender — same as verifySender().
-    // Without this, senders created via createSender() skip warmup entirely
-    // and can immediately send at full provider limits.
     const optedOut = req.body.skipWarmup === true;
     await prisma.warmupSchedule.create({
       data: {
         senderId: sender.id,
         startDate: new Date(),
         durationDays: 14,
-        dailyLimits: DEFAULT_WARMUP_DAILY_LIMITS,
+        dailyLimits: warmupLimitsForProvider(provider),
         isActive: true,
         optedOut,
       },
@@ -158,7 +177,7 @@ export const verifySender = async (
     }
 
     const id = req.params.id as string;
-    const { name, appPassword } = req.body;
+    const { name, appPassword, mailLoginEmail, provider: providerRaw } = req.body;
 
     if (!appPassword || (typeof appPassword === "string" && appPassword.trim() === "")) {
       res.status(400).json({ message: "App password is required" });
@@ -175,17 +194,20 @@ export const verifySender = async (
       return;
     }
 
+    const provider = parseProvider(providerRaw);
+    const providerConfig = resolveProviderConfig(provider);
+    const smtpLogin =
+      typeof mailLoginEmail === "string" && mailLoginEmail.trim() !== ""
+        ? mailLoginEmail.trim()
+        : existingSender.mailLoginEmail?.trim() || existingSender.email;
+
     // Test SMTP connection with the provided credentials
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465, // Use 465 for secure TLS
-      secure: true,
-      auth: {
-        user: existingSender.email,
-        pass: appPassword,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
+    const transporter = createSmtpTransporter({
+      smtpHost: existingSender.smtpHost || providerConfig.smtpHost,
+      smtpPort: existingSender.smtpPort || providerConfig.smtpPort,
+      email: existingSender.email,
+      password: appPassword,
+      loginEmail: smtpLogin,
     });
 
     try {
@@ -205,6 +227,13 @@ export const verifySender = async (
       data: {
         appPassword: encryptedPassword,
         isVerified: true,
+        mailLoginEmail:
+          smtpLogin !== existingSender.email ? smtpLogin : null,
+        smtpHost: providerConfig.smtpHost,
+        smtpPort: providerConfig.smtpPort,
+        imapHost: providerConfig.imapHost,
+        imapPort: providerConfig.imapPort,
+        dailyLimit: providerConfig.dailyLimit,
         ...(name ? { name } : {}),
       },
     });
@@ -233,7 +262,7 @@ export const verifySender = async (
             senderId: id,
             startDate: new Date(),
             durationDays: 14,
-            dailyLimits: DEFAULT_WARMUP_DAILY_LIMITS,
+            dailyLimits: warmupLimitsForProvider(provider),
             isActive: true,
             optedOut,
           },
@@ -272,19 +301,15 @@ export const getSenders = async (
       orderBy: { createdAt: "desc" },
     });
 
-    // Fetch live daily sent counts for all senders in parallel
     const sendersWithStats = await Promise.all(
       senders.map(async (sender) => {
         const currentDailyCount = await getSentCountToday(sender.id);
-        return {
-          ...sender,
-          currentDailyCount,
-        };
-      })
+        return { ...sender, currentDailyCount };
+      }),
     );
 
     res.status(200).json(sendersWithStats);
-  } catch (error: any) {
+  } catch {
     res.status(500).json({
       message: "An error occurred while fetching senders",
     });
@@ -296,20 +321,180 @@ export const getSenderEmails = async (
   res: Response,
 ): Promise<void> => {
   try {
-    // Only select the email field — no appPassword leak possible
     const senders = await prisma.sender.findMany({
       where: { userId: req.user!.id },
       select: { email: true },
     });
 
-    // Fix: `if (senders)` was always truthy for an empty array.
-    // Just map and return directly — empty array returns 200 [].
-    const senderEmails = senders.map((sender) => sender.email);
-
-    res.status(200).json(senderEmails);
-  } catch (error: any) {
+    res.status(200).json(senders.map((sender) => sender.email));
+  } catch {
     res.status(500).json({
       message: "An error occurred while fetching sender emails",
+    });
+  }
+};
+
+/**
+ * PATCH /senders/:id — Update sender name, daily limit, or SMTP credentials.
+ */
+export const updateSender = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    const id = req.params.id as string;
+    const {
+      name,
+      dailyLimit,
+      appPassword,
+      mailLoginEmail,
+      provider: providerRaw,
+    } = req.body;
+
+    const existingSender = await prisma.sender.findFirst({
+      where: { id, userId: req.user.id },
+    });
+
+    if (!existingSender) {
+      res.status(404).json({ message: "Sender not found" });
+      return;
+    }
+
+    const provider = parseProvider(providerRaw);
+    const providerConfig = resolveProviderConfig(provider);
+    const updateData: Record<string, unknown> = {};
+
+    if (typeof name === "string" && name.trim() !== "") {
+      updateData.name = name.trim();
+    }
+
+    if (dailyLimit !== undefined && dailyLimit !== null) {
+      const limit = Number(dailyLimit);
+      if (!Number.isInteger(limit) || limit < 1) {
+        res.status(400).json({ message: "Daily limit must be a positive integer" });
+        return;
+      }
+      updateData.dailyLimit = limit;
+    }
+
+    if (appPassword && typeof appPassword === "string" && appPassword.trim() !== "") {
+      const smtpLogin =
+        typeof mailLoginEmail === "string" && mailLoginEmail.trim() !== ""
+          ? mailLoginEmail.trim()
+          : existingSender.mailLoginEmail?.trim() || existingSender.email;
+
+      const transporter = createSmtpTransporter({
+        smtpHost: existingSender.smtpHost || providerConfig.smtpHost,
+        smtpPort: existingSender.smtpPort || providerConfig.smtpPort,
+        email: existingSender.email,
+        password: appPassword,
+        loginEmail: smtpLogin,
+      });
+
+      try {
+        await transporter.verify();
+      } catch {
+        res.status(400).json({
+          message: "Invalid SMTP credentials. Please check your app password.",
+        });
+        return;
+      }
+
+      updateData.appPassword = encrypt(appPassword);
+      updateData.isVerified = true;
+      updateData.mailLoginEmail =
+        smtpLogin !== existingSender.email ? smtpLogin : null;
+      updateData.smtpHost = providerConfig.smtpHost;
+      updateData.smtpPort = providerConfig.smtpPort;
+      updateData.imapHost = providerConfig.imapHost;
+      updateData.imapPort = providerConfig.imapPort;
+    } else if (
+      typeof mailLoginEmail === "string" &&
+      mailLoginEmail.trim() !== "" &&
+      mailLoginEmail.trim() !== existingSender.email
+    ) {
+      updateData.mailLoginEmail = mailLoginEmail.trim();
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ message: "No valid fields to update" });
+      return;
+    }
+
+    const updatedSender = await prisma.sender.update({
+      where: { id },
+      data: updateData,
+    });
+
+    if (updateData.smtpHost) {
+      const profile = await detectProvider(updatedSender.smtpHost);
+      if (profile) {
+        await prisma.sender.update({
+          where: { id },
+          data: { providerProfileId: profile.id },
+        });
+        updatedSender.providerProfileId = profile.id;
+      }
+    }
+
+    const { appPassword: _, ...senderResponse } = updatedSender;
+    res.status(200).json(senderResponse);
+  } catch {
+    res.status(500).json({
+      message: "An error occurred while updating the sender",
+    });
+  }
+};
+
+/**
+ * DELETE /senders/:id — Remove a sender and unlink it from campaigns/jobs.
+ */
+export const deleteSender = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ message: "Authentication required" });
+      return;
+    }
+
+    const id = req.params.id as string;
+
+    const existingSender = await prisma.sender.findFirst({
+      where: { id, userId: req.user.id },
+    });
+
+    if (!existingSender) {
+      res.status(404).json({ message: "Sender not found" });
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.rateLimitCounter.deleteMany({ where: { senderId: id } }),
+      prisma.campaignSender.deleteMany({ where: { senderId: id } }),
+      prisma.warmupSchedule.deleteMany({ where: { senderId: id } }),
+      prisma.senderCooldown.deleteMany({ where: { senderId: id } }),
+      prisma.emailCampaign.updateMany({
+        where: { senderId: id },
+        data: { senderId: null },
+      }),
+      prisma.emailJob.updateMany({
+        where: { senderId: id },
+        data: { senderId: null },
+      }),
+      prisma.sender.delete({ where: { id } }),
+    ]);
+
+    res.sendStatus(204);
+  } catch {
+    res.status(500).json({
+      message: "An error occurred while deleting the sender",
     });
   }
 };

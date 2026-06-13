@@ -316,7 +316,7 @@ cd client
 npm run dev
 ```
 
-The app is now running at `http://localhost:3000`.
+The app is now running at `http://localhost:3100`.
 
 ---
 

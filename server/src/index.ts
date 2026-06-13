@@ -1,5 +1,4 @@
-import dotenv from "dotenv";
-dotenv.config();
+import "dotenv/config";
 import express from "express";
 import cookieParser from "cookie-parser";
 import bodyParser from "body-parser";

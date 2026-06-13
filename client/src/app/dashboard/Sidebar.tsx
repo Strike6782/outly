@@ -8,7 +8,7 @@ import { SidebarProps } from "@/types";
 import { useSidebar } from "@/hooks/useSidebar";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
-import { X, PenSquare, Megaphone, LogOut, FileText } from "lucide-react";
+import { X, PenSquare, Megaphone, LogOut, FileText, Mail } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { logout } from "@/lib/apis";
 import { cn } from "@/lib/utils";
@@ -122,6 +122,20 @@ export function Sidebar({ currentLabel, setLabel, onItemClick, profile, items }:
         >
           <Megaphone className={cn("h-4 w-4 transition-colors", pathname === "/dashboard/campaigns" ? "text-primary" : "text-gray-400 opacity-60 group-hover:opacity-100 group-hover:text-gray-600")} />
           <span>Campaigns</span>
+        </Link>
+
+        <Link
+          href="/dashboard/senders"
+          onClick={close}
+          className={cn(
+            "group flex items-center gap-3 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all min-h-[36px]",
+            pathname === "/dashboard/senders"
+              ? "bg-gray-100 text-gray-900 shadow-sm"
+              : "text-gray-500 hover:bg-gray-50 hover:text-gray-900"
+          )}
+        >
+          <Mail className={cn("h-4 w-4 transition-colors", pathname === "/dashboard/senders" ? "text-primary" : "text-gray-400 opacity-60 group-hover:opacity-100 group-hover:text-gray-600")} />
+          <span>Senders</span>
         </Link>
 
         <Link

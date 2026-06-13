@@ -31,10 +31,19 @@ export interface CreateSenderPayload {
   name: string;
   email: string;
   appPassword: string;
+  /** Fastmail primary login when From address is an alias */
+  mailLoginEmail?: string;
+  provider?: "gmail" | "fastmail";
   skipWarmup?: boolean;
 }
 
-// POST /campaigns request body — payload for creating a new campaign
+export interface UpdateSenderPayload {
+  name?: string;
+  dailyLimit?: number;
+  appPassword?: string;
+  mailLoginEmail?: string;
+  provider?: "gmail" | "fastmail";
+}
 export interface CreateCampaignPayload {
   senderIds?: string[];
   senderId?: string;
@@ -178,8 +187,8 @@ export interface SenderModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (sender: SenderResponse) => void;
-  // When set, the modal is in "verify" mode for an existing unverified sender
   existingSender?: SenderResponse | null;
+  mode?: "add" | "verify" | "edit";
 }
 
 // AuthGuard component props

@@ -27,6 +27,10 @@ model Sender {
   email  String
   name   String?
 
+  // SMTP/IMAP login username when it differs from the visible From address
+  // (required for Fastmail aliases — auth uses primary account email).
+  mailLoginEmail String?
+
   // Encrypted App Password (AES-256-CBC format: "iv_hex:ciphertext_hex").
   // Default empty string allows existing rows to migrate without breaking — 
   // senders created via OAuth login won't have SMTP credentials yet.
@@ -36,6 +40,13 @@ model Sender {
   // the primary use case is Google App Passwords.
   smtpHost String @default("smtp.gmail.com")
   smtpPort Int    @default(465)
+
+  // IMAP inbox used for automatic reply and bounce monitoring.
+  imapHost String @default("imap.fastmail.com")
+  imapPort Int    @default(993)
+
+  // Last processed IMAP UID per sender inbox — enables incremental polling.
+  lastImapUid BigInt?
 
   // Whether SMTP credentials have been verified via a transporter.verify() call.
   // Existing OAuth-created senders default to false until the user configures SMTP.
@@ -120,6 +131,7 @@ model EmailJob {
   isStarred      Boolean?    @default(false)
   columnData     Json?
   isReplied      Boolean     @default(false)
+  smtpMessageId  String?
   sequenceStepId String?
 
   createdAt DateTime @default(now())

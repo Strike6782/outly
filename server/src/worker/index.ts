@@ -4,6 +4,7 @@ import { prisma } from "../config/prisma";
 import { emailQueue } from "../queues/emailQueue";
 import { processSchedulerJob } from "./sequenceScheduler";
 import { autoResumePausedCampaigns } from "./autoResumeJob";
+import { runReplyDetection } from "./replyDetector";
 import { Queue, Worker } from "bullmq";
 import { redis } from "../config/redis";
 
@@ -232,6 +233,24 @@ async function main(): Promise<void> {
   }, STUCK_CAMPAIGN_INTERVAL_MS);
 
   console.log(`🧹 Stuck-campaign sweep started (interval: ${STUCK_CAMPAIGN_INTERVAL_MS / 1000}s)`);
+
+  // Poll sender inboxes for prospect replies (default: every 15 minutes)
+  const replyDetectorInterval = parseInt(
+    process.env.REPLY_DETECTOR_INTERVAL_MS || "900000",
+    10,
+  );
+
+  setInterval(() => {
+    runReplyDetection().catch((err) =>
+      console.error("❌ Reply detector error:", err),
+    );
+  }, replyDetectorInterval);
+
+  runReplyDetection().catch((err) =>
+    console.error("❌ Reply detector initial run error:", err),
+  );
+
+  console.log(`📬 Reply detector started (interval: ${replyDetectorInterval / 1000}s)`);
 }
 
 main().catch((err) => {

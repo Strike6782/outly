@@ -43,17 +43,18 @@ export function createSmtpTransporter(sender: {
   smtpHost: string;
   smtpPort: number;
   email: string;
+  mailLoginEmail?: string | null;
   decryptedPassword: string;
 }): Transporter {
-  // Use secure connection (TLS) for port 465, typical for Gmail and secure SMTPs
   const isSecure = sender.smtpPort === 465;
+  const authUser = sender.mailLoginEmail?.trim() || sender.email;
 
   return nodemailer.createTransport({
     host: sender.smtpHost,
     port: sender.smtpPort,
     secure: isSecure,
     auth: {
-      user: sender.email,
+      user: authUser,
       pass: sender.decryptedPassword,
     },
     connectionTimeout: 15000,
@@ -324,6 +325,7 @@ export async function processEmailJob(job: Job): Promise<void> {
       smtpHost: sender.smtpHost,
       smtpPort: sender.smtpPort,
       email: sender.email,
+      mailLoginEmail: sender.mailLoginEmail,
       decryptedPassword,
     });
 
@@ -400,13 +402,35 @@ export async function processEmailJob(job: Job): Promise<void> {
     // Spam filters heavily penalize HTML-only emails without a text fallback
     const plainTextBody = emailBody.replace(/<[^>]*>?/gm, '');
 
-    await transporter.sendMail({
+    // Build optional threading headers for follow-up steps in the same conversation
+    let threadingHeaders: { inReplyTo?: string; references?: string } = {};
+    if (emailJob.sequenceStepId) {
+      const priorJob = await prisma.emailJob.findFirst({
+        where: {
+          campaignId: campaign.id,
+          toEmail: emailJob.toEmail,
+          status: "SENT",
+          smtpMessageId: { not: null },
+        },
+        orderBy: { sentAt: "desc" },
+        select: { smtpMessageId: true },
+      });
+      if (priorJob?.smtpMessageId) {
+        threadingHeaders = {
+          inReplyTo: priorJob.smtpMessageId,
+          references: priorJob.smtpMessageId,
+        };
+      }
+    }
+
+    const sendResult = await transporter.sendMail({
       from: sender.name ? `"${sender.name}" <${sender.email}>` : sender.email,
       to: emailJob.toEmail,
       subject: emailSubject,
       text: plainTextBody,
       html: processedBody,
       attachments: nodemailerAttachments,
+      ...threadingHeaders,
     });
 
     // ---------------------------------------------------------------------------
@@ -424,7 +448,11 @@ export async function processEmailJob(job: Job): Promise<void> {
     } else {
       await prisma.emailJob.update({
         where: { id: emailJobId },
-        data: { status: "SENT", sentAt: new Date() },
+        data: {
+          status: "SENT",
+          sentAt: new Date(),
+          smtpMessageId: sendResult.messageId ?? null,
+        },
       });
     }
 

@@ -8,7 +8,14 @@ import {
 } from "../utils/jwt";
 import { refreshTokenCookieOptions } from "../config/cookies";
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// Resolve Google OAuth client ID from env (trimmed — avoids copy/paste whitespace issues)
+function getGoogleClientId(): string {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  if (!clientId) {
+    throw new Error("GOOGLE_CLIENT_ID is not configured on the server");
+  }
+  return clientId;
+}
 
 // google login function
 
@@ -23,9 +30,12 @@ export const googleLogin = async (
       return;
     }
 
+    const clientId = getGoogleClientId();
+    const googleClient = new OAuth2Client(clientId);
+
     const ticket = await googleClient.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: clientId,
     });
 
     const payload = ticket.getPayload();
@@ -93,8 +103,35 @@ export const googleLogin = async (
       },
     });
   } catch (error: any) {
+    const message = error?.message ?? String(error);
+    console.error("[auth/google] login failed:", message);
+
+    // Google token validation errors — client/config issue, not a server crash
+    const isGoogleAuthError =
+      message.includes("Token used too late") ||
+      message.includes("Wrong recipient") ||
+      message.includes("audience") ||
+      message.includes("segments in token") ||
+      message.includes("No pem found") ||
+      error?.name === "GaxiosError";
+
+    if (isGoogleAuthError) {
+      res.status(401).json({
+        message:
+          "Google sign-in could not be verified. Check that GOOGLE_CLIENT_ID matches in server/.env and client/.env, and that http://localhost:3100 is an authorized JavaScript origin in Google Cloud Console.",
+        ...(process.env.NODE_ENV === "development" && { detail: message }),
+      });
+      return;
+    }
+
+    if (message.includes("GOOGLE_CLIENT_ID is not configured")) {
+      res.status(500).json({ message });
+      return;
+    }
+
     res.status(500).json({
       message: "Google login failed. Please try again.",
+      ...(process.env.NODE_ENV === "development" && { detail: message }),
     });
   }
 };

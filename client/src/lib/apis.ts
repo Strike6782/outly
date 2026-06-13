@@ -1,6 +1,7 @@
 import api from "./axios";
 import type {
   CreateSenderPayload,
+  UpdateSenderPayload,
   CreateCampaignPayload,
   SenderResponse,
   Campaign,
@@ -52,10 +53,22 @@ export const createSender = async (
   return res.data;
 };
 
+export const updateSender = async (
+  senderId: string,
+  data: UpdateSenderPayload,
+): Promise<SenderResponse> => {
+  const res = await api.patch(`/senders/${senderId}`, data);
+  return res.data;
+};
+
+export const deleteSender = async (senderId: string): Promise<void> => {
+  await api.delete(`/senders/${senderId}`);
+};
+
 // Verify an existing unverified sender by adding SMTP credentials
 export const verifySender = async (
   senderId: string,
-  data: { name?: string; appPassword: string; skipWarmup?: boolean }
+  data: { name?: string; appPassword: string; mailLoginEmail?: string; provider?: "gmail" | "fastmail"; skipWarmup?: boolean }
 ): Promise<SenderResponse> => {
   const res = await api.patch(`/senders/${senderId}/verify`, data);
   return res.data;

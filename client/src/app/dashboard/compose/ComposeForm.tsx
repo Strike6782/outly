@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ComposeFormData, ComposeFormProps, SenderResponse, CreateCampaignPayload } from "@/types";
 import { getSenders } from "@/lib/apis";
 import { SenderModal } from "./SenderModal";
@@ -17,9 +18,12 @@ import { cn } from "@/lib/utils";
 
 export function ComposeForm({ user, scheduledAt, uploadedAttachments, onSubmit, submitTrigger }: ComposeFormProps) {
   const { addToast } = useToast();
+  const router = useRouter();
   const [senders, setSenders] = useState<SenderResponse[]>([]);
   const [isSenderLoading, setIsSenderLoading] = useState(true);
   const [isSenderModalOpen, setIsSenderModalOpen] = useState(false);
+  // '+' opens add mode; 'Verify' opens verify mode for the selected unverified sender
+  const [senderModalMode, setSenderModalMode] = useState<"add" | "verify">("add");
   const [isSenderDropdownOpen, setIsSenderDropdownOpen] = useState(false);
   const senderDropdownRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<ComposeFormData>({
@@ -283,6 +287,18 @@ export function ComposeForm({ user, scheduledAt, uploadedAttachments, onSubmit, 
                               })
                             )}
                           </div>
+                          <div className="border-t border-gray-100 px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsSenderDropdownOpen(false);
+                                router.push("/dashboard/senders");
+                              }}
+                              className="w-full text-left text-xs font-medium text-primary hover:text-primary-hover py-1.5"
+                            >
+                              Manage senders...
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -300,8 +316,15 @@ export function ComposeForm({ user, scheduledAt, uploadedAttachments, onSubmit, 
                           <Users className="h-3 w-3" />{data.selectedSenderIds.length}
                         </span>
                       )}
-                      <button onClick={() => setIsSenderModalOpen(true)}
-                        className="h-8 w-8 md:h-9 md:w-9 flex items-center justify-center rounded-lg md:rounded-xl border border-dashed border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all">
+                      <button
+                        type="button"
+                        aria-label="Add sender account"
+                        onClick={() => {
+                          setSenderModalMode("add");
+                          setIsSenderModalOpen(true);
+                        }}
+                        className="h-8 w-8 md:h-9 md:w-9 flex items-center justify-center rounded-lg md:rounded-xl border border-dashed border-gray-200 text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-all"
+                      >
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -319,8 +342,12 @@ export function ComposeForm({ user, scheduledAt, uploadedAttachments, onSubmit, 
                       <p className="text-[10px] md:text-[11px] font-semibold text-amber-900">Verify Account</p>
                       <p className="text-[9px] md:text-[10px] text-amber-700/80 leading-tight">Needed for sending.</p>
                     </div>
-                    <button 
-                      onClick={() => setIsSenderModalOpen(true)}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSenderModalMode("verify");
+                        setIsSenderModalOpen(true);
+                      }}
                       className="shrink-0 h-7 px-3 rounded-lg bg-amber-600 text-white text-[9px] md:text-[10px] font-bold hover:bg-amber-700 transition-all shadow-sm"
                     >
                       Verify
@@ -513,7 +540,12 @@ export function ComposeForm({ user, scheduledAt, uploadedAttachments, onSubmit, 
         isOpen={isSenderModalOpen}
         onClose={() => setIsSenderModalOpen(false)}
         onSuccess={handleSenderUpdated}
-        existingSender={selectedSender && !selectedSender.isVerified ? selectedSender : null}
+        mode={senderModalMode}
+        existingSender={
+          senderModalMode === "verify" && selectedSender && !selectedSender.isVerified
+            ? selectedSender
+            : null
+        }
       />
 
       {/* Template overwrite confirmation */}
