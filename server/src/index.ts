@@ -19,6 +19,7 @@ import templateRoutes from "./routes/templateRoutes";
 import sequenceRoutes from "./routes/sequenceRoutes";
 import trackingRoutes from "./routes/trackingRoutes";
 import trackingMetricsRoutes from "./routes/trackingMetricsRoutes";
+import healthRoutes from "./routes/healthRoutes";
 
 /* CONFIGURATIONS */
 const app = express();
@@ -32,6 +33,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors(corsOptions));
 
 /* ROUTES */
+app.use(healthRoutes);
 app.get("/", (req, res) => {
   res.send("This is the home route");
 });

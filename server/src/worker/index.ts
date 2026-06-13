@@ -7,6 +7,8 @@ import { autoResumePausedCampaigns } from "./autoResumeJob";
 import { runReplyDetection } from "./replyDetector";
 import { Queue, Worker } from "bullmq";
 import { redis } from "../config/redis";
+import { checkHealth } from "../utils/healthCheck";
+import { startHeartbeat } from "../utils/heartbeat";
 
 /**
  * Startup Recovery Sweep
@@ -251,6 +253,9 @@ async function main(): Promise<void> {
   );
 
   console.log(`📬 Reply detector started (interval: ${replyDetectorInterval / 1000}s)`);
+
+  // Dead man's switch: ping Healthchecks.io while worker + dependencies are healthy.
+  startHeartbeat(async () => (await checkHealth()).ok);
 }
 
 main().catch((err) => {
